@@ -1,0 +1,446 @@
+---
+title: "Sapi Bali"
+author: "Febriany Lete"
+date: "2025-05-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(haven)
+library(foreign)
+library(dplyr)
+library(tidyr)
+library(labelled)
+library(ggplot2)
+library(randomForest)
+library(caret)
+library(writexl)
+```
+
+Load Dataset
+```{r}
+sapi_bali <- read_excel("DATA MENTAH TESIS.xlsx")
+
+sapi_bali$Bunting <- as.factor(sapi_bali$Bunting)
+```
+
+Exploratory Data Analysis
+
+```{r}
+# Boxplot ukuran folikel vs bunting
+ggplot(sapi_bali, aes(x = Bunting, y = Ukuran_Folikel)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Ukuran Folikel Dominan vs Status Bunting")
+
+# Rata-rata kualitas estrus per protokol
+sapi_bali %>%
+  group_by(Protokol) %>%
+  summarise(Estrus = mean(Estrus, na.rm = TRUE))
+
+```
+Random Forest
+
+```{r}
+set.seed(123)
+
+trainIndex <- createDataPartition(sapi_bali$Bunting, p = 0.7, list = FALSE)
+train <- sapi_bali[trainIndex, ]
+test <- sapi_bali[-trainIndex, ]
+
+
+rf_model <- randomForest(Bunting ~ ., data = train, importance = TRUE)
+pred <- predict(rf_model, test)
+
+# Evaluasi
+confusionMatrix(pred, test$Bunting)
+
+# Pentingnya variabel
+varImpPlot(rf_model)
+
+```
+Hasilnya to good to be true, maybe overfitting.
+
+Let's try 5-Fold Cross-Validation
+
+```{r}
+
+set.seed(123)
+
+#Control for 5-fold cross-validation
+control <- trainControl(
+  method = "cv",       
+  number = 5,          
+  verboseIter = TRUE,  
+  classProbs = TRUE, 
+  summaryFunction = twoClassSummary 
+)
+
+
+sapi_bali_cv <- sapi_bali
+sapi_bali_cv$Bunting <- ifelse(sapi_bali_cv$Bunting == 1, "Yes", "No")
+sapi_bali_cv$Bunting <- as.factor(sapi_bali_cv$Bunting)
+
+rf_cv <- train(
+  Bunting ~ .,
+  data = sapi_bali_cv,
+  method = "rf",
+  trControl = control,
+  metric = "Accuracy",   
+  tuneLength = 5       
+)
+
+print(rf_cv)
+plot(rf_cv)
+
+
+```
+
+Variable Importance
+
+```{r}
+# Menampilkan important features
+importance(rf_cv$finalModel)
+
+# Plot pentingnya variabel
+varImpPlot(rf_cv$finalModel)
+
+```
+
+Permutation Feature Importance
+
+```{r}
+# Menggunakan model final yang sudah di-train untuk menghitung PFI
+rf_model <- rf_cv$finalModel
+pfi <- randomForest::randomForest(Bunting ~ ., data = sapi_bali_cv, importance = TRUE)
+
+# Menampilkan hasil PFI
+print(importance(pfi))
+
+# Plot PFI
+varImpPlot(pfi)
+```
+
+```{r}
+# Install (jika belum) dan load package
+if (!require(pROC)) install.packages("pROC")
+if (!require(ggplot2)) install.packages("ggplot2")
+
+library(ggplot2)
+library(pROC)
+
+sapi_bali$Bunting <- as.numeric(as.character(sapi_bali$Bunting))
+
+# Fit model regresi logistik
+model_logit <- glm(Bunting ~ Ukuran_Folikel, data = sapi_bali, family = binomial)
+
+# Buat data prediksi untuk kurva logistik
+new_data <- data.frame(Ukuran_Folikel = seq(min(sapi_bali$Ukuran_Folikel),
+                                            max(sapi_bali$Ukuran_Folikel), length.out = 100))
+new_data$Predicted_Prob <- predict(model_logit, newdata = new_data, type = "response")
+
+# Plot kurva logistik
+ggplot(sapi_bali, aes(x = Ukuran_Folikel, y = Bunting)) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.4, color = "blue") +  
+  geom_line(data = new_data, aes(x = Ukuran_Folikel, y = Predicted_Prob), 
+            inherit.aes = FALSE, color = "red", linewidth = 1.2) +  
+  labs(
+    title = "Predicted Probability of Pregnancy Based on Dominant Follicle Size",
+    x = "Dominant Follicle Size",
+    y = "Predicted Probability (Pregnancy)"
+  ) +
+  theme_minimal() +
+  ylim(0, 1)
+
+
+# === ROC Curve ===
+
+# Hitung probabilitas prediksi dari model
+prediksi_prob <- predict(model_logit, type = "response")
+
+# Buat objek ROC
+roc_obj <- roc(sapi_bali$Bunting, prediksi_prob)
+
+# Plot ROC curve
+plot(roc_obj, col = "darkgreen", lwd = 2, main = "ROC Curve for Logistic Regression")
+text(0.6, 0.4, paste("AUC =", round(auc(roc_obj), 3)), col = "black", cex = 1.2)
+
+```
+
+```{r}
+# Pastikan library terpasang
+if (!require(patchwork)) install.packages("patchwork")
+if (!require(pROC)) install.packages("pROC")
+library(ggplot2)
+library(patchwork)
+library(pROC)
+
+# Model logistik
+model_logit <- glm(Bunting ~ Ukuran_Folikel, data = sapi_bali, family = binomial)
+
+# Kurva logistik
+new_data <- data.frame(Ukuran_Folikel = seq(min(sapi_bali$Ukuran_Folikel),
+                                            max(sapi_bali$Ukuran_Folikel), length.out = 100))
+new_data$Predicted_Prob <- predict(model_logit, newdata = new_data, type = "response")
+
+logit_plot <- ggplot(sapi_bali, aes(x = Ukuran_Folikel, y = as.numeric(as.character(Bunting)))) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.4, color = "blue") +
+  geom_line(data = new_data, aes(x = Ukuran_Folikel, y = Predicted_Prob),
+            inherit.aes = FALSE, color = "red", linewidth = 1.2) +
+  labs(
+    title = "Predicted Probability of Pregnancy Based on Follicle Size",
+    x = "Dominant Follicle Size",
+    y = "Predicted Probability (Pregnancy)"
+  ) +
+  theme_minimal() +
+  ylim(0, 1)
+
+# Kurva ROC
+roc_obj <- roc(sapi_bali$Bunting, predict(model_logit, type = "response"))
+
+roc_plot <- ggplot() +
+  geom_line(aes(x = 1 - roc_obj$specificities, y = roc_obj$sensitivities), color = "darkgreen") +
+  geom_abline(linetype = "dashed", color = "grey") +
+  annotate("text", x = 0.6, y = 0.2, label = paste0("AUC = ", round(auc(roc_obj), 3)), size = 5) +
+  labs(title = "ROC Curve for Logistic Regression", x = "1 - Specificity", y = "Sensitivity") +
+  theme_minimal()
+
+# Gabungkan dua plot
+logit_plot + roc_plot
+
+```
+
+```{r}
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+
+sapi_bali_filtered <- subset(sapi_bali, Paritas != 2)
+
+sapi_bali_filtered$Protokol <- factor(sapi_bali_filtered$Protokol,
+                                      levels = c(1, 2, 3),
+                                      labels = c("ESe-Cosynch", "Cosynch", "Control"))
+
+ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
+  geom_jitter(width = 0.2, color = "darkblue", size = 3, alpha = 0.7) +
+  labs(
+    title = "Follicle Size by Treatment Group (Excluding Parity = 2)",
+    x = "Treatment Protocol",
+    y = "Dominant Follicle Size"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
+  geom_boxplot(fill = "lightgray", outlier.shape = NA, alpha = 0.5) +  
+  geom_jitter(width = 0.2, color = "darkblue", size = 3, alpha = 0.7) +  
+  labs(
+    title = "Dominant Follicle Size per Treatment Group",
+    x = "Treatment Protocol",
+    y = "Dominant Follicle Size"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
+  geom_jitter(width = 0.2, color = "steelblue", size = 3, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", fatten = 2) +
+  labs(
+    title = "Dominant Follicle Size with Group Means",
+    x = "Treatment Protocol",
+    y = "Dominant Follicle Size"
+  ) +
+  theme_minimal()
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+mean_values <- sapi_bali_filtered %>%
+  group_by(Protokol) %>%
+  summarise(mean_folikel = mean(Ukuran_Folikel), .groups = "drop")
+
+ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
+  geom_jitter(width = 0.2, color = "steelblue", size = 3, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", fatten = 2) +
+  geom_text(
+    data = mean_values,
+    aes(x = Protokol, y = mean_folikel + 0.3, label = round(mean_folikel, 2)),
+    color = "black",
+    size = 4
+  ) +
+  labs(
+    title = "Ukuran folikel dominan pada masing-masing kelompok perlakuan",
+    x = "Kelompok Perlakuan",
+    y = "Ukuran Folikel Dominan (mm)"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Pastikan paket yang dibutuhkan tersedia
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(dplyr)) install.packages("dplyr")
+
+library(ggplot2)
+library(dplyr)
+
+# Filter data untuk mengecualikan Paritas = 2
+sapi_filtered <- sapi_bali %>%
+  filter(Paritas != 2)
+
+# Ubah Protokol menjadi faktor dengan label perlakuan
+sapi_filtered <- sapi_filtered %>%
+  mutate(Protokol = factor(Protokol,
+                           levels = c(3, 2, 1),
+                           labels = c("Kontrol", "Cosynch", "ESe-Cosynch")))
+
+# Hitung rata-rata dan standar deviasi kualitas estrus per protokol
+summary_stats <- sapi_filtered %>%
+  group_by(Protokol) %>%
+  summarise(mean_estrus = mean(Estrus, na.rm = TRUE),
+            sd_estrus = sd(Estrus, na.rm = TRUE),
+            .groups = 'drop')
+
+# Buat bar plot dengan error bars
+ggplot(summary_stats, aes(x = Protokol, y = mean_estrus, fill = Protokol)) +
+  geom_bar(stat = "identity", color = "black", width = 0.6) +
+  geom_errorbar(aes(ymin = mean_estrus - sd_estrus, ymax = mean_estrus + sd_estrus),
+                width = 0.2) +
+  geom_text(aes(label = paste0(round(mean_estrus, 1), "±", round(sd_estrus, 1))),
+            vjust = -0.8, size = 4.2) +
+  labs(
+    title = "Rata-rata dan SD Kualitas Estrus Sapi Bali per Perlakuan",
+    x = "Kelompok Perlakuan",
+    y = "Rata-rata Skor Kualitas Estrus"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Filter dan ubah Protokol jadi faktor kategori
+sapi_filtered <- sapi_bali %>%
+  filter(Paritas != 2) %>%
+  mutate(Protokol = factor(Protokol,
+                           levels = c(1, 2, 3),
+                           labels = c("ESe-Cosynch", "Cosynch", "Kontrol")))
+
+mean_labels <- sapi_filtered %>%
+  group_by(Protokol) %>%
+  summarise(mean_estrus = mean(Estrus))
+
+# Plot dengan label mean
+ggplot(sapi_filtered, aes(x = Protokol, y = Estrus, color = Protokol)) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 5, color = "black") +
+  geom_text(data = mean_labels, aes(x = Protokol, y = mean_estrus + 0.2, 
+            label = round(mean_estrus, 1)), 
+            color = "black", size = 4.2) +
+  labs(
+    title = "Distribusi Skor Kualitas Estrus per Individu",
+    x = "Kelompok Perlakuan",
+    y = "Skor Kualitas Estrus"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+# Buat variabel biner respon estrus
+sapi_filtered <- sapi_filtered %>%
+  mutate(Respon = ifelse(Estrus > 0, "Ya", "Tidak"))
+
+# Hitung jumlahnya per kelompok
+respon_counts <- sapi_filtered %>%
+  count(Protokol, Respon)
+
+# Plot stacked bar
+ggplot(respon_counts, aes(x = Protokol, y = n, fill = Respon)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  labs(
+    title = "Respon Estrus Berdasarkan Kelompok Perlakuan",
+    x = "Kelompok Perlakuan",
+    y = "Jumlah Sapi",
+    fill = "Respon Estrus"
+  ) +
+  scale_fill_manual(values = c("Tidak" = "gray70", "Ya" = "skyblue")) +
+  theme_minimal()
+
+```
+
+```{r}
+library(patchwork)
+
+# Filter data dan ubah Protokol menjadi faktor
+sapi_filtered <- sapi_bali %>%
+  filter(Paritas != 2) %>%
+  mutate(Protokol = factor(Protokol,
+                           levels = c(1, 2, 3),
+                           labels = c("ESe-Cosynch", "Cosynch", "Kontrol")),
+         Respon = ifelse(Estrus > 0, "Ya", "Tidak"))
+plot_1 <- ggplot(sapi_filtered, aes(x = Protokol, y = Estrus, color = Protokol)) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 5, color = "black") +
+  labs(
+    title = "Distribusi Skor Kualitas Estrus",
+    x = "Kelompok Perlakuan",
+    y = "Skor Kualitas Estrus"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+respon_counts <- sapi_filtered %>%
+  count(Protokol, Respon)
+
+plot_2 <- ggplot(respon_counts, aes(x = Protokol, y = n, fill = Respon)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  labs(
+    title = "Jumlah Respon Estrus",
+    x = "Kelompok Perlakuan",
+    y = "Jumlah Sapi",
+    fill = "Respon Estrus"
+  ) +
+  scale_fill_manual(values = c("Tidak" = "gray70", "Ya" = "skyblue")) +
+  theme_minimal()
+
+# Gabungkan kedua plot dalam satu baris
+plot_1 + plot_2 + plot_layout(ncol = 2)
+```
+```{r}
+# Pastikan Estrus adalah integer
+sapi_filtered$Estrus <- as.integer(sapi_filtered$Estrus)
+
+ggplot() +
+  geom_rect(data = background_rects, aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax, fill = fill), alpha = 0.3) +
+  geom_jitter(data = sapi_filtered, aes(x = Protokol, y = Estrus, color = Protokol), width = 0.2, size = 3, alpha = 0.6) +
+  stat_summary(data = sapi_filtered, aes(x = Protokol, y = Estrus), fun = mean, geom = "point", shape = 18, size = 5, color = "black") +
+  geom_text(data = mean_labels, aes(x = Protokol, y = mean_estrus + 0.2, 
+            label = round(mean_estrus, 1)), 
+            color = "black", size = 4.2) +
+  scale_fill_identity() +
+  labs(
+    title = "Distribusi Skor Kualitas Estrus per Individu",
+    x = "Kelompok Perlakuan",
+    y = "Skor Kualitas Estrus"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),   # hapus grid horizontal
+    panel.grid.minor.y = element_blank(),
+    axis.ticks.y = element_line()           # munculkan garis kecil di sumbu y
+  )
+
+```
+
