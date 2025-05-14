@@ -264,25 +264,37 @@ ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
 library(ggplot2)
 library(dplyr)
 
+# Hitung mean dan sd
 mean_values <- sapi_bali_filtered %>%
   group_by(Protokol) %>%
-  summarise(mean_folikel = mean(Ukuran_Folikel), .groups = "drop")
+  summarise(
+    mean_folikel = mean(Ukuran_Folikel),
+    sd_folikel = sd(Ukuran_Folikel),
+    .groups = "drop"
+  )
 
+# Plot dengan label mean ± SD
 ggplot(sapi_bali_filtered, aes(x = Protokol, y = Ukuran_Folikel)) +
   geom_jitter(width = 0.2, color = "steelblue", size = 3, alpha = 0.6) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.5, color = "red", fatten = 2) +
   geom_text(
     data = mean_values,
-    aes(x = Protokol, y = mean_folikel + 0.3, label = round(mean_folikel, 2)),
+    aes(
+      x = Protokol,
+      y = mean_folikel + 0.3,
+      label = paste0(round(mean_folikel, 2), " ± ", round(sd_folikel, 2))
+    ),
+    inherit.aes = FALSE,
     color = "black",
     size = 4
   ) +
   labs(
-    title = "Ukuran folikel dominan pada masing-masing kelompok perlakuan",
-    x = "Kelompok Perlakuan",
-    y = "Ukuran Folikel Dominan (mm)"
+    title = "Dominant Follicle Size by Treatment Group",
+    x = "Treatment Group",
+    y = "Dominant Follicle Size (mm)"
   ) +
   theme_minimal()
+
 
 ```
 
@@ -441,6 +453,54 @@ ggplot() +
     panel.grid.minor.y = element_blank(),
     axis.ticks.y = element_line()           # munculkan garis kecil di sumbu y
   )
+
+```
+
+```{r}
+pregnancy_rate <- sapi_bali %>%
+  filter(Paritas != 2) %>%
+  mutate(Protokol = factor(Protokol, levels = c(1, 2, 3),
+                           labels = c("ESe-Cosynch", "Cosynch", "Control"))) %>%
+  group_by(Protokol) %>%
+  summarise(Rate = mean(as.numeric(as.character(Bunting))) * 100)
+
+ggplot(pregnancy_rate, aes(x = Protokol, y = Rate, fill = Protokol)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black") +
+  geom_text(aes(label = paste0(round(Rate, 1), "%")), vjust = -0.5, size = 4) +
+  labs(title = "Pregnancy Rate by Treatment Group",
+       x = "Treatment Group", y = "Pregnancy Rate (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+sapi_plot <- sapi_bali %>%
+  filter(Paritas != 2) %>%
+  mutate(
+    Protokol = factor(Protokol, levels = c(1, 2, 3),
+                      labels = c("ESe-Cosynch", "Cosynch", "Control")),
+    Bunting = factor(Bunting, levels = c("0", "1"), labels = c("Not Pregnant", "Pregnant"))
+  )
+
+ggplot(sapi_plot, aes(x = Bunting, y = Ukuran_Folikel, color = Protokol)) +
+  geom_jitter(width = 0.2, size = 3, alpha = 0.7) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, color = "black") +
+  labs(title = "Follicle Size by Pregnancy Outcome",
+       x = "Pregnancy Outcome", y = "Dominant Follicle Size (mm)") +
+  theme_minimal()
+
+```
+
+
+```{r}
+ggplot(sapi_plot, aes(x = Protokol, y = Ukuran_Folikel, fill = Bunting)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6, position = position_dodge(0.8)) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8),
+              size = 2, alpha = 0.6) +
+  labs(title = "Follicle Size by Treatment and Pregnancy Status",
+       x = "Treatment Group", y = "Dominant Follicle Size (mm)", fill = "Pregnancy") +
+  theme_minimal()
 
 ```
 
