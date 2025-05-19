@@ -210,7 +210,7 @@ roc_plot <- ggplot() +
   theme_minimal()
 
 # Gabungkan dua plot
-logit_plot + roc_plot
+#logit_plot + roc_plot
 
 ```
 
@@ -502,5 +502,65 @@ ggplot(sapi_plot, aes(x = Protokol, y = Ukuran_Folikel, fill = Bunting)) +
        x = "Treatment Group", y = "Dominant Follicle Size (mm)", fill = "Pregnancy") +
   theme_minimal()
 
+```
+```{r}
+ggplot(sapi_bali, aes(x = Ukuran_Folikel, y = Bunting)) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.4, color = "blue", size = 2) +  
+  geom_line(data = new_data, aes(x = Ukuran_Folikel, y = Predicted_Prob),
+            inherit.aes = FALSE, color = "red", linewidth = 1.5) +  # Garis lebih tebal
+  labs(
+    title = expression(bold("Probabilitas Prediksi Kebuntingan Berdasarkan Ukuran Folikel Dominan")),
+    x = expression(bold("Ukuran Folikel Dominan (mm)")),
+    y = expression(bold("Probabilitas Prediksi Kebuntingan"))
+  ) +
+  theme_minimal(base_size = 16) + 
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 14)
+  ) +
+  ylim(0, 1)
+
+```
+
+```{r}
+set.seed(145)
+ggplot(sapi_bali, aes(x = Ukuran_Folikel, y = Bunting)) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.4, color = "blue", size = 2) +
+  geom_line(data = new_data, aes(x = Ukuran_Folikel, y = Predicted_Prob),
+            inherit.aes = FALSE, color = "red", linewidth = 1.5) +
+  labs(
+    title = "Probabilitas Prediksi Kebuntingan Berdasarkan\nUkuran Folikel Dominan",
+    x = "Ukuran Folikel Dominan (mm)",
+    y = "Probabilitas Prediksi Kebuntingan"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, lineheight = 1.2),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 14)
+  ) +
+  ylim(0, 1)
+
+```
+
+```{r}
+set.seed(145)
+ggplot(sapi_bali, aes(x = Ukuran_Folikel, y = Bunting)) +
+  geom_jitter(height = 0.05, width = 0.1, alpha = 0.4, color = "blue", size = 2) +
+  geom_line(data = new_data, aes(x = Ukuran_Folikel, y = Predicted_Prob),
+            inherit.aes = FALSE, color = "red", linewidth = 1.5) +
+  labs(
+    title = "Predicted Probability of Pregnancy\nBased on Dominant Follicle Size",
+    x = "Dominant Follicle Size (mm)",
+    y = "Predicted Probability (Pregnancy)"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, lineheight = 1.2),
+    axis.title = element_text(face = "bold", size = 14),
+    axis.text = element_text(size = 14)
+  ) +
+  ylim(0, 1)
 ```
 
